@@ -37,6 +37,11 @@ exchange at a time, polls every 120 s, waits 5 min after a failure and re-reads 
 stove 25 s after a command. Avoid sending read commands for ids the stove does not
 report: on some modules this freezes the local server until a power cycle.
 
+### Developer specification
+
+See the [OpenSpec baseline](openspec/README.md) for the integration's behavior,
+protocol, acceptance scenarios, and known limitations.
+
 ### Todo:
 - [x] Monitorig of all status values
 - [ ] Discover more sensor meanings

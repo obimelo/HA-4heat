@@ -1,0 +1,9 @@
+schema: spec-driven
+
+context: |
+  HA-4heat is a Home Assistant custom integration for 4Heat stoves on the local network.
+  Runtime code lives in custom_components/4heat/; HACS metadata is in hacs.json.
+  The initial baseline describes commit 883c8f0 on climate-setpoint-stability.
+  Keep observed behavior in openspec/specs/ and proposed behavior in change deltas.
+  Use mocked TCP exchanges and Home Assistant state for automated verification.
+  Do not assume behavior or register meanings across stove models without evidence.
