@@ -30,7 +30,8 @@ from .boiler import (
 )
 from .const import (
     DOMAIN, SOCKET_TIMEOUT, DATA_QUERY, ERROR_QUERY,
-    RESULT_ERROR, CONF_MODE, CONF_BOILER_CONTROLS, MODES, MODE_TYPE, ERROR_TYPE,
+    RESULT_ERROR, CONF_MODE, CONF_BOILER_CONTROLS, DEFAULT_BOILER_CONTROLS,
+    MODES, MODE_TYPE, ERROR_TYPE,
     SETPOINT_ID, ROOM_TEMP_ID, BOILER_TARGET_ID, POWER_TYPE,
 )
 from .transport import exchange, reply_tokens
@@ -63,7 +64,7 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
         self._lock = asyncio.Lock()
         self._confirm_unsub = None
         self._retired = False
-        self.boiler_controls = options.get(CONF_BOILER_CONTROLS, False)
+        self.boiler_controls = options.get(CONF_BOILER_CONTROLS, DEFAULT_BOILER_CONTROLS)
         self.swiches = [MODE_TYPE]
         self.stove_id = id
 
@@ -96,6 +97,15 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
             hass, _LOGGER, config_entry=config_entry, name=DOMAIN,
             update_interval=POLL_INTERVAL,
         )
+
+    def stove_device_info(self, title: str):
+        """Use the same device identity for readings, switches, and controls."""
+        return {
+            "identifiers": {(DOMAIN, self.serial_number)},
+            "name": title,
+            "manufacturer": "4Heat",
+            "model": self.model,
+        }
 
     # ------------------------------------------------------------------ network
     def _exchange(self, payload: bytes) -> str:

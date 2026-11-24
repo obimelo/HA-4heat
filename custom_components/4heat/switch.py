@@ -4,12 +4,11 @@ import logging
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    MODE_NAMES, SENSOR_TYPES, DOMAIN, DATA_COORDINATOR, MODE_TYPE, ERROR_TYPE
-)
+from .const import MODE_NAMES, DOMAIN, DATA_COORDINATOR, MODE_TYPE, ERROR_TYPE
 from .coordinator import FourHeatDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+_SWITCH_LABELS = {MODE_TYPE: "Power ON/OFF", ERROR_TYPE: "Clear Error"}
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -34,7 +33,7 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator, sensor_type, name):
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._sensor = SENSOR_TYPES[sensor_type][0]
+        self._label = _SWITCH_LABELS[sensor_type]
         self._name = name
         self.type = sensor_type
         self.coordinator = coordinator
@@ -45,8 +44,8 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def name(self):
-        """Return the name of the sensor."""
-        return f"{self._name} {self._sensor}"
+        """Return the name of the switch."""
+        return f"{self._name} {self._label}"
 
     @property
     def is_on(self):
@@ -83,12 +82,7 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def device_info(self):
         """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.serial_number)},
-            "name": self._name,
-            "manufacturer": "4Heat",
-            "model": self.model,
-        }
+        return self.coordinator.stove_device_info(self._name)
 
     @property
     def extra_state_attributes(self):

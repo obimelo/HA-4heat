@@ -15,13 +15,13 @@ Search for 4Heat
 
 ### Configuration
 
-The integration is configurated via UI
+Configure the integration in the Home Assistant UI. For the supported stove
+readings and optional boiler slider and power selector, see the [README](README.md).
 
 BETA * BETA * BETA - Not finished yet - BETA * BETA * BETA
 
 ### Todo:
-- [x] Monitorig of all status values
-- [ ] Discover more sensor meanings
+- [x] Monitor the supported stove and boiler readings
 - [ ] Find a way to get model and serial
 - [ ] Add Service to set value like target temp
 - [ ] Add Icons

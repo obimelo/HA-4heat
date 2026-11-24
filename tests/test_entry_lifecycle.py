@@ -16,14 +16,14 @@ coordinator_module = import_module("custom_components.4heat.coordinator")
 sensor = import_module("custom_components.4heat.sensor")
 
 
-def _entry(entry_id, *, enabled=False):
+def _entry(entry_id, *, enabled=None):
     return SimpleNamespace(
         entry_id=entry_id,
         domain=const.DOMAIN,
         title=entry_id,
         state=ConfigEntryState.SETUP_IN_PROGRESS,
         data={CONF_HOST: entry_id, CONF_MONITORED_CONDITIONS: []},
-        options={const.CONF_BOILER_CONTROLS: True} if enabled else {},
+        options={} if enabled is None else {const.CONF_BOILER_CONTROLS: enabled},
         async_on_unload=Mock(),
         add_update_listener=Mock(side_effect=lambda callback: callback),
     )
@@ -53,18 +53,19 @@ async def test_reload_and_unload_are_entry_scoped(tmp_path):
         async_reload=AsyncMock(),
         async_unload_platforms=AsyncMock(return_value=True),
     )
-    old_entry = _entry("opt-in", enabled=True)
-    other_entry = _entry("untouched")
+    old_entry = _entry("default-controls")
+    other_entry = _entry("disabled-controls", enabled=False)
     await integration.async_setup(hass, {})
 
     with patch.object(coordinator_module.FourHeatDataUpdateCoordinator, "_exchange",
-                      return_value='["SEC","1","B20364000000000003"]'):
+                      return_value='["SEC","1","B20364000000000003"]') as exchange:
         assert await integration.async_setup_entry(hass, old_entry)
         assert await integration.async_setup_entry(hass, other_entry)
+    assert [call.args for call in exchange.call_args_list] == [(const.DATA_QUERY,)] * 2
 
     forwarded = hass.config_entries.async_forward_entry_setups.await_args_list
-    assert tuple(forwarded[0].args[1]) == ("sensor", "switch", "climate", "number", "select")
-    assert tuple(forwarded[1].args[1]) == ("sensor", "switch", "climate")
+    assert tuple(forwarded[0].args[1]) == ("sensor", "switch", "number", "select")
+    assert tuple(forwarded[1].args[1]) == ("sensor", "switch")
     entries = hass.data[const.DOMAIN]
     old = entries[old_entry.entry_id][const.DATA_COORDINATOR]
     other = entries[other_entry.entry_id][const.DATA_COORDINATOR]
@@ -106,7 +107,7 @@ async def test_guarded_service_and_legacy_routes_coexist(tmp_path):
         async_unload_platforms=AsyncMock(return_value=True),
     )
     opted_in = _entry("opt-in", enabled=True)
-    legacy = _entry("legacy")
+    legacy = _entry("legacy", enabled=False)
     frame_log = []
 
     def exchange(coordinator, payload):

@@ -4,18 +4,22 @@ import logging
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import CONF_MONITORED_CONDITIONS
+from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .boiler import combustion_power_option
 from .const import (
     MODE_NAMES, ERROR_NAMES, POWER_NAMES,
     MODE_TYPE, ERROR_TYPE, POWER_TYPE,
+    ALTERNATE_BOILER_TARGET_ID, BOILER_TARGET_ID, EXPOSED_SENSOR_IDS,
     SENSOR_TYPES, DOMAIN, DATA_COORDINATOR,
     ATTR_MARKER, ATTR_NUM_VAL, ATTR_READING_ID, ATTR_STOVE_ID
 )
 from .coordinator import FourHeatDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+_SETTING_SENSOR_IDS = {POWER_TYPE, BOILER_TARGET_ID, ALTERNATE_BOILER_TARGET_ID}
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -23,12 +27,35 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator: FourHeatDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
         DATA_COORDINATOR
     ]
-    entities = []
-    for token in entry.data.get(CONF_MONITORED_CONDITIONS, ()):
-        if isinstance(token, str) and len(token) > 5:
-            entities.append(FourHeatDevice(coordinator, token[1:6], entry.title))
+    _async_sync_setting_sensor_visibility(hass, entry.entry_id, coordinator.boiler_controls)
+    reported_ids = dict.fromkeys(
+        token[1:6]
+        for token in entry.data.get(CONF_MONITORED_CONDITIONS, ())
+        if isinstance(token, str) and token[1:6] in EXPOSED_SENSOR_IDS
+    )
+    if BOILER_TARGET_ID in reported_ids:
+        reported_ids.pop(ALTERNATE_BOILER_TARGET_ID, None)
+    async_add_entities([
+        FourHeatDevice(coordinator, reading_id, entry.title)
+        for reading_id in reported_ids
+    ])
 
-    async_add_entities(entities)
+
+@callback
+def _async_sync_setting_sensor_visibility(hass, entry_id, hide):
+    """Apply visibility on reload without removing sensors or overwriting user hides."""
+    registry = er.async_get(hass)
+    hidden_by = er.RegistryEntryHider.INTEGRATION
+    for entity in er.async_entries_for_config_entry(registry, entry_id):
+        if (
+            entity.domain == "sensor"
+            and entity.platform == DOMAIN
+            and entity.unique_id.rsplit("_", 1)[-1] in _SETTING_SENSOR_IDS
+        ):
+            if hide and entity.hidden_by is None:
+                registry.async_update_entity(entity.entity_id, hidden_by=hidden_by)
+            elif not hide and entity.hidden_by == hidden_by:
+                registry.async_update_entity(entity.entity_id, hidden_by=None)
 
 
 class FourHeatDevice(CoordinatorEntity, SensorEntity):
@@ -43,6 +70,9 @@ class FourHeatDevice(CoordinatorEntity, SensorEntity):
         self._name = name
         self.type = sensor_type
         self.coordinator = coordinator
+        self._attr_entity_registry_visible_default = not (
+            coordinator.boiler_controls and sensor_type in _SETTING_SENSOR_IDS
+        )
         self._last_value = None
         self.serial_number = coordinator.serial_number
         self.model = coordinator.model
@@ -101,12 +131,7 @@ class FourHeatDevice(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self):
         """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.serial_number)},
-            "name": self._name,
-            "manufacturer": "4Heat",
-            "model": self.model,
-        }
+        return self.coordinator.stove_device_info(self._name)
 
     @property
     def extra_state_attributes(self):

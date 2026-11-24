@@ -19,14 +19,15 @@ class FourHeatBoilerTarget(CoordinatorEntity, NumberEntity):
     """A reported boiler water target and a guarded whole-degree setter."""
 
     _attr_device_class = NumberDeviceClass.TEMPERATURE
-    _attr_mode = NumberMode.BOX
+    _attr_mode = NumberMode.SLIDER
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_native_step = 1
 
     def __init__(self, coordinator, name):
         super().__init__(coordinator)
-        self._attr_name = f"{name} Boiler water target"
+        self._attr_name = f"{name} Boiler Target"
         self._attr_unique_id = f"{coordinator.stove_id}_boiler_target"
+        self._attr_device_info = coordinator.stove_device_info(name)
 
     @property
     def available(self) -> bool:

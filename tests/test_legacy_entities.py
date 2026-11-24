@@ -29,7 +29,8 @@ async def test_sensor_routing_attributes_are_published_in_home_assistant(tmp_pat
     await device_registry.async_load(hass)
     await entity_registry.async_load(hass)
     coordinator = coordinator_module.FourHeatDataUpdateCoordinator(
-        hass, config={CONF_HOST: "simulated.invalid"}, options={}, id="example",
+        hass, config={CONF_HOST: "simulated.invalid"},
+        options={const.CONF_BOILER_CONTROLS: False}, id="example",
     )
     platform = EntityPlatform(
         hass=hass,

@@ -5,7 +5,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .boiler import COMBUSTION_POWER_VALUES, combustion_power_option
-from .const import DATA_COORDINATOR, DOMAIN, POWER_TYPE
+from .const import COMBUSTION_POWER_LABEL, DATA_COORDINATOR, DOMAIN, POWER_TYPE
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -22,8 +22,9 @@ class FourHeatCombustionPower(CoordinatorEntity, SelectEntity):
 
     def __init__(self, coordinator, name):
         super().__init__(coordinator)
-        self._attr_name = f"{name} Combustion power"
+        self._attr_name = f"{name} {COMBUSTION_POWER_LABEL}"
         self._attr_unique_id = f"{coordinator.stove_id}_combustion_power"
+        self._attr_device_info = coordinator.stove_device_info(name)
 
     @property
     def available(self) -> bool:
@@ -36,5 +37,5 @@ class FourHeatCombustionPower(CoordinatorEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         if option not in COMBUSTION_POWER_VALUES:
-            raise ServiceValidationError("Choose combustion power level 1 through 5 or Auto.")
+            raise ServiceValidationError("Choose combustion power Auto or P1 through P5.")
         await self.coordinator.async_set_combustion_power(COMBUSTION_POWER_VALUES[option])

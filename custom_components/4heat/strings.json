@@ -26,7 +26,7 @@
           "boiler_controls": "Enable boiler water and five-level combustion controls"
         },
         "data_description": {
-          "boiler_controls": "Enable only for compatible stoves with five power levels and Auto. Leave disabled if your stove has a sixth manual power level."
+          "boiler_controls": "Enabled by default. Turn off for stoves with a sixth manual power level or without compatible boiler controls."
         }
       }
     }

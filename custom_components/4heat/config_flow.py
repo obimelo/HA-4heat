@@ -12,6 +12,7 @@ from .const import (
     CONF_BOILER_CONTROLS,
     CONF_MODE,
     DATA_QUERY,
+    DEFAULT_BOILER_CONTROLS,
     DOMAIN,
     ERROR_QUERY,
     RESULT_ERROR,
@@ -112,7 +113,7 @@ class FourHeatOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Optional(
                     CONF_BOILER_CONTROLS,
-                    default=options.get(CONF_BOILER_CONTROLS, False),
+                    default=options.get(CONF_BOILER_CONTROLS, DEFAULT_BOILER_CONTROLS),
                 ): bool,
             }),
         )

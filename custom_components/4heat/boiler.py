@@ -6,8 +6,7 @@ BOILER_TARGET_RANGE = (60, 80)
 BOILER_MINIMUM_IDS = ("20205", "20005")
 BOILER_MAXIMUM_IDS = ("20206", "20006")
 
-COMBUSTION_POWER_VALUES = {f"Level {level}": level for level in range(1, 6)}
-COMBUSTION_POWER_VALUES["Auto"] = 6
+COMBUSTION_POWER_VALUES = {"Auto": 6, **{f"P{level}": level for level in range(5, 0, -1)}}
 _COMBUSTION_POWER_OPTIONS = {
     value: option for option, value in COMBUSTION_POWER_VALUES.items()
 }

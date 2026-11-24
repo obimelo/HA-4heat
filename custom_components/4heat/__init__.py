@@ -22,7 +22,7 @@ from .const import (
 from .coordinator import FourHeatDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-_BASE_PLATFORMS = ("sensor", "switch", "climate")
+_BASE_PLATFORMS = ("sensor", "switch")
 _BOILER_PLATFORMS = ("number", "select")
 
 CONFIG_SCHEMA = vol.Schema(

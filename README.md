@@ -19,45 +19,50 @@ Search for 4Heat
 
 ### Configuration
 
-The integration is configurated via UI
+Add the integration in the Home Assistant UI. It exposes these readings when
+reported: **State**, **Error Message**, **Exhaust temperature**, **Combustion Power**,
+**Boiler water**, **Water pressure**, and **Boiler target**. Other readings and
+the room thermostat are no longer added.
 
-For a compatible stove, open **Settings → Devices & services → 4Heat Stove** and
-choose **Configure** on that stove's entry. Select **Enable boiler water and
-five-level combustion controls** in the options. The entry reloads
-automatically. Turn the option off again to restore the original behavior; you
-do not need to remove or re-add the integration.
+The **Power ON/OFF** switch starts or stops the stove. The **Clear Error** switch sends an
+unblock command when switched off; it does not mute alerts. Legacy command
+mode still provides only the power switch.
+
+**Enable boiler water and five-level combustion controls** defaults to on for
+entries with no saved choice. An explicit off setting is preserved. To change
+it, open **Settings → Devices & services → 4Heat Stove** and choose
+**Configure** on that stove's entry. The entry reloads automatically.
+
+With the option enabled, the read-only **Combustion Power** and **Boiler target**
+sensors are hidden from the device page because the controls show the reported
+values. The sensors keep their IDs and remain usable by automations.
 
 BETA * BETA * BETA - Not finished yet - BETA * BETA * BETA
 
 ### Boiler water and combustion power
 
-The optional **Boiler water target** control uses whole degrees from 60–80 °C
+The optional **Boiler Target** slider uses whole degrees from 60–80 °C
 and respects tighter limits reported by the stove. You can change the target
 while the stove is confirmed off; the setting does not turn it on. A stove
 that omits its target while off may not show the new value until it reports
 it again.
 
-**Combustion power** offers Level 1 through Level 5 and Auto. It changes the
+The **Combustion Power** dropdown offers **Auto, P5, P4, P3, P2, P1** in that order. It changes the
 configured setting, not the stove's on/off state or its measured power.
 Both controls display what the stove reports instead of immediately showing
 the requested value. The integration normally asks for a readback after
 25 seconds.
 
-Enable these controls only for a compatible model; leave them disabled if
-your stove has a sixth manual power level. The option does not change
-the existing room thermostat. See the [protocol findings](docs/boiler-controls-protocol.md)
+Turn these controls off if your stove has a sixth manual power level or lacks
+compatible boiler controls. See the [protocol findings](docs/boiler-controls-protocol.md)
 for the technical mappings.
 
-### Thermostat (room setpoint)
+### Upgrading an existing entry
 
-If the stove reports a room setpoint (`J30138`), a `climate` entity is created:
-target temperature = J30138 (whole °C), current temperature = 30006, HVAC mode = ON/OFF.
-The setpoint is written with `["SEC","1","J30138000000000020"]` (20 °C) and also works
-through the `4heat.set_value` service on the `UN 30138` / `Room setpoint` sensor.
-
-If the stove loses its wireless room probe it falls back to its internal probe and
-reports wrong values (e.g. room 29 °C, setpoint 38 °C): the integration keeps the
-last trusted values meanwhile and shows `room_probe: lost since HH:MM` on the thermostat.
+Check dashboards and automations that referenced the removed entities. Old
+registry entries can remain unavailable until removed in Home Assistant. In
+automations that call `select.select_option`, replace `Level 1`–`Level 5` with
+`P1`–`P5`; `Auto` is unchanged.
 
 ### Connection to the Wi-Fi module
 
@@ -72,8 +77,7 @@ See the [OpenSpec baseline](openspec/README.md) for the integration's behavior,
 protocol, acceptance scenarios, and known limitations.
 
 ### Todo:
-- [x] Monitorig of all status values
-- [ ] Discover more sensor meanings
+- [x] Monitor the supported stove and boiler readings
 - [ ] Find a way to get model and serial
 - [x] Add Service to set value like target temp
 - [x] Add Icons
