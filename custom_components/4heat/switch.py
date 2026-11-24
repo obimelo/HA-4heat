@@ -22,8 +22,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     for sensorId in coordinator.swiches:
         try:
             entities.append(FourHeatSwitch(coordinator, sensorId, entry.title))
-        except:
-            _LOGGER.debug(f"Error adding {sensorId}")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Error adding switch %s: %s", sensorId, err)
 
     async_add_entities(entities)
 
@@ -51,19 +51,17 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self):
         """Return true if switch is on."""
-        if self.type not in self.coordinator.data: 
+        reading = (self.coordinator.data or {}).get(self.type)
+        if reading is None:
             return False
         if self.type == MODE_TYPE:
-            return self.coordinator.data[self.type][0] not in [0,7,8,9]
-        elif self.type == ERROR_TYPE:
-            return self.coordinator.data[self.type][0] != 0
+            return reading[0] not in (0, 7, 8, 9)
+        return self.type == ERROR_TYPE and reading[0] != 0
 
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""
         if self.type == MODE_TYPE:
             await self.coordinator.async_turn_on()
-        elif self.type == ERROR_TYPE:
-            None
         await self.coordinator.async_request_refresh()
         self.async_write_ha_state()
 
@@ -79,7 +77,7 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def unique_id(self):
-        """Return unique id based on device serial and variable."""
+        """Keep the existing ID used by the entity registry."""
         return f"{self._name}_{self.type}"
 
     @property
@@ -93,18 +91,14 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
         }
 
     @property
-    def state_attributes(self):
-        try:
-            if self.type == MODE_TYPE:
-                return {
-                    "Num Val": self.coordinator.data[self.type][0],
-                    "Val text": MODE_NAMES[self.coordinator.data[self.type][0]]
-                }
-            elif self.type == ERROR_TYPE:
-                return {"Num Val": self.coordinator.data[self.type][0]}
-            else:
-                return None
-
-        except Exception as ex:
-            _LOGGER.error(ex)
+    def extra_state_attributes(self):
+        """Publish the existing diagnostic attributes without assuming a known state."""
+        reading = (self.coordinator.data or {}).get(self.type)
+        if reading is None:
             return None
+        value = reading[0]
+        if self.type == MODE_TYPE:
+            return {"Num Val": value, "Val text": MODE_NAMES.get(value, "Unknown")}
+        if self.type == ERROR_TYPE:
+            return {"Num Val": value}
+        return None

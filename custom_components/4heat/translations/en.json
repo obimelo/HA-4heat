@@ -3,6 +3,7 @@
     "title": "4Heat",
     "step": {
       "user": {
+        "title": "Configure 4Heat stove",
         "data": {
           "name": "Name of the device",
           "host": "The ip address of this 4Heat device",
@@ -11,10 +12,23 @@
       }
     },
     "error": {
+      "cannot_connect": "Could not connect to the stove or read its data",
       "host_exists": "This host is already configured"
     },
     "abort": {
       "host_exists": "This host is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "boiler_controls": "Enable boiler water and five-level combustion controls"
+        },
+        "data_description": {
+          "boiler_controls": "Enable only for compatible stoves with five power levels and Auto. Leave disabled if your stove has a sixth manual power level."
+        }
+      }
     }
   }
 }

@@ -1,12 +1,19 @@
-
 set_value:
-  name: Set value
-  description: Sets val speed.
+  name: Set stove value
+  description: Change a writable setting on a configured stove.
   fields:
     entity_id:
-      description: Id of the entiy to set
-      example: "sendor.something"
+      name: Sensor
+      description: The 4Heat sensor representing the setting to change.
+      example: "sensor.stove_boiler_target"
+      required: true
+      selector:
+        entity:
+          filter:
+            - domain: sensor
     value:
-      description: value to set
+      name: Value
+      description: A whole number or the entity ID of a helper with a numeric state.
       example: "5"
-
+      selector:
+        text: {}

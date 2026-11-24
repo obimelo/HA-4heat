@@ -8,7 +8,11 @@ Home Assistant Component for 4heat stove devices
 
 ### Installation
 
-Copy this folder to `<config_dir>/custom_components/4heat/`.
+Copy the repository's `custom_components/4heat/` directory to
+`<config_dir>/custom_components/4heat/`.
+
+Running Home Assistant in Docker? See the [Home Assistant Container installation guide](docs/home-assistant-container.md)
+for deployment, configuration, troubleshooting, and rollback.
 
 ### HACS
 Search for 4Heat
@@ -17,7 +21,32 @@ Search for 4Heat
 
 The integration is configurated via UI
 
+For a compatible stove, open **Settings → Devices & services → 4Heat Stove** and
+choose **Configure** on that stove's entry. Select **Enable boiler water and
+five-level combustion controls** in the options. The entry reloads
+automatically. Turn the option off again to restore the original behavior; you
+do not need to remove or re-add the integration.
+
 BETA * BETA * BETA - Not finished yet - BETA * BETA * BETA
+
+### Boiler water and combustion power
+
+The optional **Boiler water target** control uses whole degrees from 60–80 °C
+and respects tighter limits reported by the stove. You can change the target
+while the stove is confirmed off; the setting does not turn it on. A stove
+that omits its target while off may not show the new value until it reports
+it again.
+
+**Combustion power** offers Level 1 through Level 5 and Auto. It changes the
+configured setting, not the stove's on/off state or its measured power.
+Both controls display what the stove reports instead of immediately showing
+the requested value. The integration normally asks for a readback after
+25 seconds.
+
+Enable these controls only for a compatible model; leave them disabled if
+your stove has a sixth manual power level. The option does not change
+the existing room thermostat. See the [protocol findings](docs/boiler-controls-protocol.md)
+for the technical mappings.
 
 ### Thermostat (room setpoint)
 

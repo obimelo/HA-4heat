@@ -47,4 +47,15 @@ openspec validate --specs --strict
 
 CLI validation checks document structure, not runtime conformance. For implementation verification, use a Home Assistant test instance with fake TCP replies, controllable time, and synthetic entity states. Assert commands against the fake module, including full versus legacy mode, and verify stale-data and probe transitions with sequential replies. Do not send exploratory register reads to hardware; the project reports that some modules stop responding when queried for unreported IDs. The coordinator notes describe testing on a Fogo Montanha Square D pellet insert, not universal hardware validation.
 
+Run the checked-in mocked integration tests in an isolated Python 3.13 environment:
+
+```text
+python -m pip install -r tests/requirements.txt
+python -m pytest -o asyncio_default_fixture_loop_scope=function tests
+```
+
+The suite instantiates Home Assistant core objects with simulated module replies; it does not need a running Home Assistant installation or a stove. On Windows, the pinned Home Assistant dependencies may require C++ Build Tools if prebuilt wheels are unavailable.
+
+To check the newer compatibility target, use a separate Python 3.14 environment with `homeassistant==2026.11.3`, `pytest`, and `pytest-asyncio`, then run the same test command.
+
 For future behavior changes, create an OpenSpec change under `openspec/changes/`, describe only the affected requirements in delta specs, and archive the change after implementation and verification. This initial documentation does not introduce a pending runtime change.

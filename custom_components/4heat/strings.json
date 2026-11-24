@@ -3,18 +3,32 @@
   "config": {
     "step": {
       "user": {
+        "title": "Configure 4Heat stove",
         "data": {
-          "host": "[%key:common::config_flow::data::host%]"
+          "host": "[%key:common::config_flow::data::host%]",
+          "name": "Name of the device",
+          "mode": "Legacy command mode"
         }
       }
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "host_exists": "This host is already configured"
     },
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+      "host_exists": "This host is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "boiler_controls": "Enable boiler water and five-level combustion controls"
+        },
+        "data_description": {
+          "boiler_controls": "Enable only for compatible stoves with five power levels and Auto. Leave disabled if your stove has a sixth manual power level."
+        }
+      }
     }
   }
 }

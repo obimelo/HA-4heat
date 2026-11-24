@@ -1,9 +1,12 @@
 """The 4Heat integration."""
 
 import logging
+
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import CONF_MONITORED_CONDITIONS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .boiler import combustion_power_option
 from .const import (
     MODE_NAMES, ERROR_NAMES, POWER_NAMES,
     MODE_TYPE, ERROR_TYPE, POWER_TYPE,
@@ -21,38 +24,28 @@ async def async_setup_entry(hass, entry, async_add_entities):
         DATA_COORDINATOR
     ]
     entities = []
-    sensorIds = entry.data[CONF_MONITORED_CONDITIONS]
-
-    for sensorId in sensorIds:
-        if len(sensorId) > 5:
-            try:
-                sId = sensorId[1:6]
-                entities.append(FourHeatDevice(coordinator, sId, entry.title))
-            except:
-                _LOGGER.debug(f"Error adding {sensorId}")
+    for token in entry.data.get(CONF_MONITORED_CONDITIONS, ()):
+        if isinstance(token, str) and len(token) > 5:
+            entities.append(FourHeatDevice(coordinator, token[1:6], entry.title))
 
     async_add_entities(entities)
 
 
-class FourHeatDevice(CoordinatorEntity):
+class FourHeatDevice(CoordinatorEntity, SensorEntity):
     """Representation of a 4Heat device."""
 
     def __init__(self, coordinator, sensor_type, name):
         """Initialize the sensor."""
         super().__init__(coordinator)
-        if sensor_type not in SENSOR_TYPES:
-            _LOGGER.debug(f"Sensor '{sensor_type}' unknown, named UN {sensor_type}")
-            SENSOR_TYPES[sensor_type] = [f"UN {sensor_type}", None, ""]
-        self._sensor = SENSOR_TYPES[sensor_type][0]
+        self._sensor, self._attr_native_unit_of_measurement, self._attr_icon = (
+            SENSOR_TYPES.get(sensor_type, (f"UN {sensor_type}", None, ""))
+        )
         self._name = name
         self.type = sensor_type
         self.coordinator = coordinator
         self._last_value = None
         self.serial_number = coordinator.serial_number
         self.model = coordinator.model
-        self._unit_of_measurement = SENSOR_TYPES[self.type][1]
-        self._icon = SENSOR_TYPES[self.type][2]
-        _LOGGER.debug(self.coordinator)
 
     @property
     def name(self):
@@ -60,13 +53,14 @@ class FourHeatDevice(CoordinatorEntity):
         return f"{self._name} {self._sensor}"
 
     @property
-    def state(self):
-        """Return the state of the device."""
-        if self.type not in self.coordinator.data:
-            return None  # Evita di inviare valori non validi
+    def native_value(self):
+        """Return the measured value or decoded status."""
+        data = self.coordinator.data or {}
+        if self.type not in data:
+            return None
 
         try:
-            raw_value = self.coordinator.data[self.type][0]  # Ottiene il valore grezzo
+            raw_value = data[self.type][0]
 
             # Controlla se il valore è None o non valido
             if raw_value is None:
@@ -83,7 +77,10 @@ class FourHeatDevice(CoordinatorEntity):
             elif self.type == ERROR_TYPE:
                 state = ERROR_NAMES.get(raw_value, "Unknown_Error_Name: " + str(raw_value))
             elif self.type == POWER_TYPE:
-                state = POWER_NAMES.get(raw_value, "Unknown_Power_Name: " + str(raw_value))
+                if self.coordinator.boiler_controls and combustion_power_option(raw_value) == "Auto":
+                    state = "Auto"
+                else:
+                    state = POWER_NAMES.get(raw_value, "Unknown_Power_Name: " + str(raw_value))
             else:
                 state = raw_value
 
@@ -97,23 +94,8 @@ class FourHeatDevice(CoordinatorEntity):
 
 
     @property
-    def maker(self):
-        """Maker information"""
-        return self.coordinator.data[self.type][1]
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement this sensor expresses itself in."""
-        return self._unit_of_measurement
-
-    @property
-    def icon(self):
-        """Return icon."""
-        return self._icon
-
-    @property
     def unique_id(self):
-        """Return unique id based on device serial and variable."""
+        """Keep the existing ID used by the entity registry."""
         return f"{self._name}_{self.type}"
 
     @property
@@ -127,17 +109,16 @@ class FourHeatDevice(CoordinatorEntity):
         }
 
     @property
-    def state_attributes(self):
-        try:
-            val = {ATTR_MARKER: self.coordinator.data[self.type][1]}
-            val[ATTR_READING_ID] = self.type
-            val[ATTR_STOVE_ID] = self.coordinator.stove_id
-
-            if self.type == MODE_TYPE or self.type == ERROR_TYPE or self.type == POWER_TYPE:
-                val[ATTR_NUM_VAL] = self.coordinator.data[self.type][0]
-                
-            return val
-
-        except Exception as ex:
-            _LOGGER.error(ex)
+    def extra_state_attributes(self):
+        """Keep the routing and diagnostic attributes used by existing actions."""
+        reading = (self.coordinator.data or {}).get(self.type)
+        if reading is None:
             return None
+        attributes = {
+            ATTR_MARKER: reading[1],
+            ATTR_READING_ID: self.type,
+            ATTR_STOVE_ID: self.coordinator.stove_id,
+        }
+        if self.type in (MODE_TYPE, ERROR_TYPE, POWER_TYPE):
+            attributes[ATTR_NUM_VAL] = reading[0]
+        return attributes

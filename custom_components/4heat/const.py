@@ -25,6 +25,7 @@ ON_CMD_OLD = b'["SEC","1","0"]' # ON
 
 MODES = [[ON_CMD, OFF_CMD, UNBLOCK_CMD], [ON_CMD_OLD, OFF_CMD_OLD, None]]
 CONF_MODE = 'mode'
+CONF_BOILER_CONTROLS = "boiler_controls"
 CMD_MODE_OPTIONS = ['Full set (default)', 'Limited set']
 
 RESULT_VALS = 'SEC'
@@ -45,6 +46,7 @@ MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=50)
 MODE_TYPE = "30001"
 ERROR_TYPE = "30002"
 POWER_TYPE = "20364"
+BOILER_TARGET_ID = "20199"
 
 SENSOR_TYPES = {
     "30001": ["State", None, ""],
@@ -72,7 +74,7 @@ SENSOR_TYPES = {
     "20005": ["Min Range of Boiler Thermostat", None, ""],
     "20006": ["Max Range of Boiler Thermostat", None, ""],
     "20180": ["Boiler target", UnitOfTemperature.CELSIUS, ""],
-    "20199": ["Boiler target", UnitOfTemperature.CELSIUS, ""],
+    BOILER_TARGET_ID: ["Boiler target", UnitOfTemperature.CELSIUS, ""],
     "20205": ["Minimum Range of Boiler", UnitOfTemperature.CELSIUS, ""],
     "20206": ["Maximum Range of Boiler", UnitOfTemperature.CELSIUS, ""],
     "20211": ["UN 20211", None, ""],

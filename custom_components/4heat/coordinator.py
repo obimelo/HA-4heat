@@ -15,20 +15,25 @@ Notes on the module (tested on a Fogo Montanha Square D pellet insert):
 import asyncio
 from datetime import timedelta
 import logging
-import socket
 
-from async_timeout import timeout
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .const import (
-    DOMAIN, SOCKET_BUFFER, SOCKET_TIMEOUT, TCP_PORT, DATA_QUERY, ERROR_QUERY,
-    RESULT_ERROR, CONF_MODE, MODES, MODE_TYPE, ERROR_TYPE,
-    SETPOINT_ID, ROOM_TEMP_ID,
+from .boiler import (
+    BOILER_MAXIMUM_IDS, BOILER_MINIMUM_IDS, BOILER_TARGET_RANGE,
+    COMBUSTION_POWER_VALUES, combustion_power_option, whole_value,
 )
+from .const import (
+    DOMAIN, SOCKET_TIMEOUT, DATA_QUERY, ERROR_QUERY,
+    RESULT_ERROR, CONF_MODE, CONF_BOILER_CONTROLS, MODES, MODE_TYPE, ERROR_TYPE,
+    SETPOINT_ID, ROOM_TEMP_ID, BOILER_TARGET_ID, POWER_TYPE,
+)
+from .transport import exchange, reply_tokens
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,12 +48,22 @@ SETPOINT_JUMP = 5                    # °C, jump without a write = probe lost
 class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching 4heat data."""
 
-    def __init__(self, hass: HomeAssistant, *, config: dict, options: dict, id: str):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        config: dict,
+        options: dict,
+        id: str,
+        config_entry: ConfigEntry | None = None,
+    ):
         """Initialize global 4heat data updater."""
         self._host = config[CONF_HOST]
         self._mode = False
         self._lock = asyncio.Lock()
         self._confirm_unsub = None
+        self._retired = False
+        self.boiler_controls = options.get(CONF_BOILER_CONTROLS, False)
         self.swiches = [MODE_TYPE]
         self.stove_id = id
 
@@ -68,6 +83,7 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
         self.model = "Basic"
         self.serial_number = "1"
         self.last_successful_data = None
+        self._fresh_readings = {}
         self.failures = 0
         self.last_ok = None
         self.last_write = None
@@ -76,59 +92,58 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
         self.probe_lost_since = None
         self._trusted = {}
 
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=POLL_INTERVAL)
+        super().__init__(
+            hass, _LOGGER, config_entry=config_entry, name=DOMAIN,
+            update_interval=POLL_INTERVAL,
+        )
 
     # ------------------------------------------------------------------ network
     def _exchange(self, payload: bytes) -> str:
         """One TCP request/response with the module (runs in the executor)."""
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(SOCKET_TIMEOUT)
-        try:
-            s.connect((self._host, TCP_PORT))
-            s.send(payload)
-            return s.recv(SOCKET_BUFFER).decode()
-        finally:
-            try:
-                s.close()
-            except OSError:
-                pass
+        return exchange(self._host, payload)
 
     async def _send(self, payload: bytes, label: str) -> bool:
         """Send a command, serialized with polling."""
         if payload is None:
             return False
         async with self._lock:
-            try:
-                async with timeout(SOCKET_TIMEOUT + 5):
-                    answer = await self.hass.async_add_executor_job(self._exchange, payload)
-                _LOGGER.debug("4heat %s -> %s", label, answer)
-                return True
-            except Exception as ex:  # noqa: BLE001
-                _LOGGER.error("4heat: %s failed: %s", label, ex)
+            if self._retired:
                 return False
+            return await self._send_locked(payload, label)
 
-    @staticmethod
-    def _parse(raw: str) -> list:
-        return raw.replace("[", "").replace("]", "").replace('"', "").split(",")
+    async def _send_locked(self, payload: bytes, label: str, *, check_reply=False) -> bool:
+        """Send a frame while the caller holds the exchange lock."""
+        try:
+            async with asyncio.timeout(SOCKET_TIMEOUT + 5):
+                answer = await self.hass.async_add_executor_job(self._exchange, payload)
+        except Exception as ex:  # noqa: BLE001
+            _LOGGER.error("4heat: %s failed: %s", label, ex)
+            return False
+
+        _LOGGER.debug("4heat %s -> %s", label, answer)
+        if check_reply and reply_tokens(answer)[0] in ("", RESULT_ERROR):
+            _LOGGER.warning("4heat: %s received an empty or rejected reply", label)
+            return False
+        return True
 
     # ------------------------------------------------------------------ polling
     async def _async_update_data(self) -> dict:
         """Fetch data from 4heat."""
 
-        def _update_data() -> dict:
-            items = self._parse(self._exchange(DATA_QUERY))
+        def _read_current_reply() -> dict:
+            items = reply_tokens(self._exchange(DATA_QUERY))
             if not items or items[0] == "":
                 raise UpdateFailed("Empty answer from the 4heat module")
             if items[0] == RESULT_ERROR:
-                items = self._parse(self._exchange(ERROR_QUERY))
-            data = dict(self.data or {})
+                items = reply_tokens(self._exchange(ERROR_QUERY))
+            readings = {}
             for item in items:
                 if len(item) > 3:
                     try:
-                        data[item[1:6]] = [int(item[7:]), item[0]]
+                        readings[item[1:6]] = [int(item[7:]), item[0]]
                     except ValueError:
                         _LOGGER.debug("4heat: cannot parse %s", item)
-            return data
+            return readings
 
         if self._lock.locked():
             # A command is being sent: do not open a second connection.
@@ -138,9 +153,11 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
 
         try:
             async with self._lock:
-                async with timeout(SOCKET_TIMEOUT + 5):
-                    data = await self.hass.async_add_executor_job(_update_data)
+                async with asyncio.timeout(SOCKET_TIMEOUT + 5):
+                    fresh_readings = await self.hass.async_add_executor_job(_read_current_reply)
+                self._fresh_readings = fresh_readings
         except Exception as err:  # noqa: BLE001
+            self._fresh_readings = {}
             self.update_interval = BACKOFF_INTERVAL
             self.failures += 1
             if self.last_successful_data is None or self.failures >= FAILURES_BEFORE_UNAVAILABLE:
@@ -149,6 +166,7 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("4heat: poll failed (%s), keeping last data", err)
             return self.last_successful_data
 
+        data = {**(self.data or {}), **fresh_readings}
         self._check_room_probe(data)
         self.last_successful_data = data
         self.failures = 0
@@ -188,6 +206,8 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _schedule_confirm(self) -> None:
         """Re-read the stove a little after a command instead of immediately."""
+        if self._retired:
+            return
         if self._confirm_unsub:
             self._confirm_unsub()
 
@@ -196,6 +216,14 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
             await self.async_request_refresh()
 
         self._confirm_unsub = async_call_later(self.hass, CONFIRM_DELAY, _later)
+
+    async def async_shutdown(self) -> None:
+        """Cancel this stove's delayed command refresh before retiring it."""
+        self._retired = True
+        if self._confirm_unsub:
+            self._confirm_unsub()
+            self._confirm_unsub = None
+        await super().async_shutdown()
 
     # ------------------------------------------------------------------ commands
     async def async_turn_on(self) -> bool:
@@ -221,6 +249,76 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
             self.async_set_updated_data(self.data)
         self._schedule_confirm()
         return ok
+
+    @property
+    def boiler_target_range(self) -> tuple[int, int] | None:
+        """Return the range only if a boiler target write is currently eligible."""
+        if not self.boiler_controls or self._retired:
+            return None
+        target = self._fresh_readings.get(BOILER_TARGET_ID)
+        if target is None:
+            state = self._fresh_readings.get(MODE_TYPE)
+            if state is None or state[0] != 0:
+                return None
+            target = (self.data or {}).get(BOILER_TARGET_ID)
+        if target is not None and target[1] != "B":
+            return None
+
+        low, high = BOILER_TARGET_RANGE
+        for reading_id in BOILER_MINIMUM_IDS:
+            reading = self._fresh_readings.get(reading_id)
+            if reading and reading[0] > 0:
+                low = max(low, reading[0])
+        for reading_id in BOILER_MAXIMUM_IDS:
+            reading = self._fresh_readings.get(reading_id)
+            if reading and reading[0] > 0:
+                high = min(high, reading[0])
+        return (low, high) if low <= high else None
+
+    @property
+    def can_set_combustion_power(self) -> bool:
+        """Whether the latest exchange reported a writable power setting."""
+        reading = self._fresh_readings.get(POWER_TYPE)
+        return (
+            self.boiler_controls and not self._retired
+            and reading is not None and reading[1] == "B"
+        )
+
+    async def async_set_boiler_target(self, value) -> None:
+        """Write a supported boiler target without changing the stove's power state."""
+        await self._async_set_boiler_control(BOILER_TARGET_ID, value)
+
+    async def async_set_combustion_power(self, value) -> None:
+        """Write a supported power level; accept either numeric Auto code as input."""
+        await self._async_set_boiler_control(POWER_TYPE, value)
+
+    async def _async_set_boiler_control(self, reading_id: str, value) -> None:
+        """Recheck the current reply under lock, then request eventual readback."""
+        async with self._lock:
+            if reading_id == BOILER_TARGET_ID:
+                limits = self.boiler_target_range
+                if limits is None:
+                    raise ServiceValidationError("The boiler water target is not writable right now.")
+                low, high = limits
+                wire_value = whole_value(value, low, high)
+                if wire_value is None:
+                    raise ServiceValidationError(f"Enter a whole-degree boiler target from {low} to {high} °C.")
+            else:
+                if not self.can_set_combustion_power:
+                    raise ServiceValidationError("Combustion power is not writable right now.")
+                option = combustion_power_option(whole_value(value, 1, 7))
+                if option is None:
+                    raise ServiceValidationError("Choose combustion power level 1 through 5 or Auto.")
+                wire_value = COMBUSTION_POWER_VALUES[option]
+
+            setting = f"B{reading_id}{wire_value:012d}"
+            ok = await self._send_locked(
+                f'["SEC","1","{setting}"]'.encode(), setting, check_reply=True,
+            )
+            self._schedule_confirm()
+
+        if not ok:
+            raise HomeAssistantError("The stove did not accept or reply to the setting change.")
 
     async def async_set_j(self, id, value) -> bool:
         """Write a value reported with the 'J' marker (e.g. room setpoint J30138)."""
