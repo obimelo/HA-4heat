@@ -33,9 +33,11 @@ entries with no saved choice. An explicit off setting is preserved. To change
 it, open **Settings → Devices & services → 4Heat Stove** and choose
 **Configure** on that stove's entry. The entry reloads automatically.
 
-With the option enabled, the read-only **Combustion Power** and **Boiler target**
-sensors are hidden from the device page because the controls show the reported
-values. The sensors keep their IDs and remain usable by automations.
+The read-only **Combustion Power** and **Boiler target** sensors are visible by
+default, even when the controls are enabled. They show reported values while
+the controls may show a provisional request. Upgrading restores visibility
+for sensors previously hidden by the integration, but leaves manually hidden
+sensors alone.
 
 BETA * BETA * BETA - Not finished yet - BETA * BETA * BETA
 

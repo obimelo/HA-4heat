@@ -27,7 +27,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator: FourHeatDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
         DATA_COORDINATOR
     ]
-    _async_sync_setting_sensor_visibility(hass, entry.entry_id, coordinator.boiler_controls)
     reported_ids = dict.fromkeys(
         token[1:6]
         for token in entry.data.get(CONF_MONITORED_CONDITIONS, ())
@@ -35,6 +34,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     )
     if BOILER_TARGET_ID in reported_ids:
         reported_ids.pop(ALTERNATE_BOILER_TARGET_ID, None)
+    if setting_ids := reported_ids.keys() & _SETTING_SENSOR_IDS:
+        _async_restore_setting_sensor_visibility(hass, entry.entry_id, setting_ids)
     async_add_entities([
         FourHeatDevice(coordinator, reading_id, entry.title)
         for reading_id in reported_ids
@@ -42,20 +43,17 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 @callback
-def _async_sync_setting_sensor_visibility(hass, entry_id, hide):
-    """Apply visibility on reload without removing sensors or overwriting user hides."""
+def _async_restore_setting_sensor_visibility(hass, entry_id, setting_ids):
+    """Undo the integration's previous default hiding without changing user choices."""
     registry = er.async_get(hass)
-    hidden_by = er.RegistryEntryHider.INTEGRATION
     for entity in er.async_entries_for_config_entry(registry, entry_id):
         if (
             entity.domain == "sensor"
             and entity.platform == DOMAIN
-            and entity.unique_id.rsplit("_", 1)[-1] in _SETTING_SENSOR_IDS
+            and entity.unique_id.rsplit("_", 1)[-1] in setting_ids
+            and entity.hidden_by == er.RegistryEntryHider.INTEGRATION
         ):
-            if hide and entity.hidden_by is None:
-                registry.async_update_entity(entity.entity_id, hidden_by=hidden_by)
-            elif not hide and entity.hidden_by == hidden_by:
-                registry.async_update_entity(entity.entity_id, hidden_by=None)
+            registry.async_update_entity(entity.entity_id, hidden_by=None)
 
 
 class FourHeatDevice(CoordinatorEntity, SensorEntity):
@@ -70,9 +68,6 @@ class FourHeatDevice(CoordinatorEntity, SensorEntity):
         self._name = name
         self.type = sensor_type
         self.coordinator = coordinator
-        self._attr_entity_registry_visible_default = not (
-            coordinator.boiler_controls and sensor_type in _SETTING_SENSOR_IDS
-        )
         self._last_value = None
         self.serial_number = coordinator.serial_number
         self.model = coordinator.model

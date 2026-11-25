@@ -10,7 +10,7 @@ The stove device page mixes useful boiler controls with readings that are unsupp
 - Rename the State and Error switches to Power ON/OFF and Clear Error without changing command-mode behavior.
 - Show the Combustion Power selector and Boiler Target slider on the stove device by default, unless the controls have been explicitly disabled.
 - Label the read-only fault sensor Error Message to distinguish it from the Clear Error switch.
-- Hide the corresponding read-only sensors from the device page while the controls are enabled, without removing them from automations.
+- Keep the read-only combustion power and boiler target sensors visible by default alongside the controls.
 - Update native controls immediately, verify against the stove, and notify only for a confirmed mismatch.
 
 ## Capabilities

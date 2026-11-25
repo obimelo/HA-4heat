@@ -31,19 +31,20 @@ The integration SHALL derive reading IDs from the saved monitored conditions and
 
 ## ADDED Requirements
 
-### Requirement: Avoid duplicate setting displays
+### Requirement: Setting sensor visibility
 
-An entry with boiler controls enabled SHALL hide the read-only Combustion Power and Boiler target sensors from the device page without disabling or removing them. The integration SHALL undo its own hides when the option is turned off and SHALL preserve sensors hidden by the user.
+The read-only Combustion Power and Boiler target sensors SHALL be visible by default regardless of the boiler controls option. When adding these sensors, the integration SHALL undo its own previous hides without changing user visibility or entity IDs.
 
 #### Scenario: Enable the controls on an existing entry
-- GIVEN an entry already has visible combustion power and boiler target sensors
+- GIVEN an entry has visible combustion power and boiler target sensors
 - WHEN the entry reloads with the boiler controls enabled
-- THEN the native selector and slider replace the read-only displays on the device page
+- THEN the read-only displays remain visible alongside the controls
 - AND the existing sensor IDs remain usable by automations
 
-#### Scenario: Disable the controls again
-- WHEN the entry reloads with the boiler controls disabled
-- THEN sensors hidden by the integration become visible again
+#### Scenario: Upgrade an entry with hidden setting sensors
+- GIVEN a setting sensor was hidden by the integration
+- WHEN the entry starts after upgrade
+- THEN the integration restores that sensor's visibility
 - AND sensors hidden by the user remain hidden
 
 ### Requirement: Supported sensor name, units and identity

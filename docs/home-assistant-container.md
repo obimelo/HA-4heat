@@ -101,7 +101,7 @@ The option adds a **Boiler Target** slider (60–80 °C, or a tighter range repo
 
 All four controls (**Power ON/OFF**, **Clear Error**, **Boiler Target**, and **Combustion Power**) immediately show the requested value. The integration verifies it against a fresh stove reading, requesting a check after about 25 seconds if needed. It corrects the control and sends a notification only if the stove reports a different value. The read-only sensors are not updated optimistically.
 
-The two controls replace the duplicate read-only displays on the device page. The read-only sensor entities are hidden, not disabled, so existing automations can still use them.
+The read-only **Combustion Power** and **Boiler target** sensors are visible by default alongside the controls. When you upgrade, HA-4heat unhides sensors it previously hid automatically without changing manual visibility settings.
 
 ## Troubleshooting
 

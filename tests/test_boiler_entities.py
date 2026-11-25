@@ -72,7 +72,8 @@ async def test_only_selected_readings_and_switches_are_exposed(tmp_path, primary
 
 
 @pytest.mark.asyncio
-async def test_duplicate_sensors_are_hidden_not_removed_when_controls_are_enabled(tmp_path):
+@pytest.mark.parametrize("manual_hide", [None, const.POWER_TYPE, const.BOILER_TARGET_ID])
+async def test_setting_sensors_are_visible_by_default_and_undo_only_old_integration_hides(tmp_path, manual_hide):
     hass = HomeAssistant(str(tmp_path))
     await load_registries(hass)
     entry = SimpleNamespace(
@@ -86,18 +87,16 @@ async def test_duplicate_sensors_are_hidden_not_removed_when_controls_are_enable
         async_get_entry={entry.entry_id: entry, other.entry_id: other}.get,
     )
     registry = er.async_get(hass)
-    power = registry.async_get_or_create(
-        "sensor", const.DOMAIN, "My stove_20364", config_entry=entry,
-    )
-    target = registry.async_get_or_create(
-        "sensor", const.DOMAIN, "My stove_20199", config_entry=entry,
-    )
-    user_hidden = registry.async_get_or_create(
-        "sensor", const.DOMAIN, "My stove_20180", config_entry=entry,
-        hidden_by=er.RegistryEntryHider.USER,
-    )
+    previously_hidden = {
+        reading_id: registry.async_get_or_create(
+            "sensor", const.DOMAIN, f"My stove_{reading_id}", config_entry=entry,
+            hidden_by=er.RegistryEntryHider.USER if reading_id == manual_hide else er.RegistryEntryHider.INTEGRATION,
+        )
+        for reading_id in (const.POWER_TYPE, const.BOILER_TARGET_ID)
+    }
     other_power = registry.async_get_or_create(
         "sensor", const.DOMAIN, "Other stove_20364", config_entry=other,
+        hidden_by=er.RegistryEntryHider.INTEGRATION,
     )
     instance = coordinator_module.FourHeatDataUpdateCoordinator(
         hass, config={CONF_HOST: "simulated.invalid"},
@@ -109,22 +108,13 @@ async def test_duplicate_sensors_are_hidden_not_removed_when_controls_are_enable
         instance.async_set_updated_data({const.POWER_TYPE: [3, "B"], const.BOILER_TARGET_ID: [70, "B"]})
         await sensor.async_setup_entry(hass, entry, added.extend)
         assert [(item.entity_registry_visible_default, item.native_value) for item in added] == [
-            (False, "P3"), (False, 70), (True, None),
+            (True, "P3"), (True, 70), (True, None),
         ]
-        for duplicate in (power, target):
-            registered = registry.async_get(duplicate.entity_id)
-            assert registered.hidden_by == er.RegistryEntryHider.INTEGRATION
+        for reading_id, entity in previously_hidden.items():
+            registered = registry.async_get(entity.entity_id)
+            assert registered.hidden_by == (er.RegistryEntryHider.USER if reading_id == manual_hide else None)
             assert registered.disabled_by is None
-        assert registry.async_get(user_hidden.entity_id).hidden_by == er.RegistryEntryHider.USER
-        assert registry.async_get(other_power.entity_id).hidden_by is None
-
-        instance.boiler_controls = False
-        added.clear()
-        await sensor.async_setup_entry(hass, entry, added.extend)
-        assert all(item.entity_registry_visible_default for item in added)
-        assert registry.async_get(power.entity_id).hidden_by is None
-        assert registry.async_get(target.entity_id).hidden_by is None
-        assert registry.async_get(user_hidden.entity_id).hidden_by == er.RegistryEntryHider.USER
+        assert registry.async_get(other_power.entity_id).hidden_by == er.RegistryEntryHider.INTEGRATION
     finally:
         await instance.async_shutdown()
 
