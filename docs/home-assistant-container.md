@@ -97,7 +97,9 @@ For Compose, you can use `docker compose restart -t 60 homeassistant` from the C
 4. For an **existing** stove, do not add it again. After restarting Home Assistant, use its existing entry and confirm that it reports fresh readings before testing controls.
 5. **Enable boiler water and five-level combustion controls** is on by default unless you previously turned it off. In **Configure**, turn it off if the stove offers a sixth manual power level or you aren't sure it is compatible.
 
-The option adds a **Boiler Target** slider (60–80 °C, or a tighter range reported by the stove) and a **Combustion Power** dropdown (**Auto, P5, P4, P3, P2, P1**) to the stove's device page. Changing either setting does not start the stove. Availability depends on what the module reports; the new value is only displayed after the stove reports it. Readback is normally requested after about 25 seconds. The integration no longer adds the room thermostat or sensors outside the supported readings listed in the [README](../README.md#configuration).
+The option adds a **Boiler Target** slider (60–80 °C, or a tighter range reported by the stove) and a **Combustion Power** dropdown (**Auto, P5, P4, P3, P2, P1**) to the stove's device page. Changing either setting does not start the stove. The integration no longer adds the room thermostat or sensors outside the supported readings listed in the [README](../README.md#configuration).
+
+All four controls (**Power ON/OFF**, **Clear Error**, **Boiler Target**, and **Combustion Power**) immediately show the requested value. The integration verifies it against a fresh stove reading, requesting a check after about 25 seconds if needed. It corrects the control and sends a notification only if the stove reports a different value. The read-only sensors are not updated optimistically.
 
 The two controls replace the duplicate read-only displays on the device page. The read-only sensor entities are hidden, not disabled, so existing automations can still use them.
 

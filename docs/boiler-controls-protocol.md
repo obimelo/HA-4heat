@@ -17,6 +17,15 @@ Both writes use `["SEC","1","B<id><12-digit value>"]`. Neither sends a power-on 
 
 For either register on an opted-in entry, `4heat.set_value` follows the same checks as the native control. It requires an explicit whole numeric value (a number, numeric text, or a reference to a numeric entity state). A power value of `7` is accepted from existing automations but sent as `6`. Other entries and registers retain the generic service's original behavior.
 
-No ad hoc register queries are needed. Polling uses the existing bulk query and its fixed error fallback. An empty response, `ERR`, or transport error fails an opted-in write; even a successful exchange is not proof of application. The integration reads back later rather than reporting the requested value optimistically.
+No ad hoc register queries are needed. Polling uses the existing bulk query and its fixed error fallback. An empty response, `ERR`, or transport error is logged but does not determine whether a setting was applied. A successful acknowledgment is also not proof.
+
+The requested value is shown on the native control but kept separate from
+the coordinator's reported readings. Unless a matching poll arrives sooner,
+the coordinator requests one debounced check 25 seconds after the send attempt.
+Only a comparable fresh mismatch at verification triggers a notification.
+Checks compare `B20199`, `B20364` (with Auto codes normalized), or the reported
+state as shown by the corresponding switch. If the reading is missing,
+unusable or times out, the assumption is dropped without a mismatch notice.
+No command is resent automatically.
 
 During Windows testing, the module returned `0` for `30006` while the official app showed about 20 °C. The source of the discrepancy was not verified. The room sensor and thermostat are not exposed by the current HA-4heat entity set.

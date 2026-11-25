@@ -26,3 +26,24 @@ Combustion Power SHALL offer **Auto, P5, P4, P3, P2, P1** in that order. P1–P5
 - GIVEN the latest poll does not contain a `B20364` reading
 - WHEN a power-setting change is requested
 - THEN no power-setting command is sent
+
+### Requirement: Reported state and feedback
+
+Boiler and combustion controls SHALL show the requested value provisionally after validation without changing reported telemetry. A fresh readback SHALL replace the assumption; only a comparable fresh mismatch after the verification check SHALL send a failure notification. Missing or unusable readback SHALL clear the assumption without a mismatch notification. Existing eligibility rules SHALL still use fresh reported readings.
+
+#### Scenario: A setting is not applied despite a reply
+- GIVEN the reported option is P3 and the user requests Auto
+- WHEN the command starts
+- THEN the selector immediately shows Auto while the sensor still reports P3
+- WHEN the verification poll still reports P3
+- THEN the selector returns to P3 and the user is notified
+
+#### Scenario: First failed poll still serves cached data
+- GIVEN a poll fails and the coordinator retains cached data
+- WHEN a new control write is attempted without a new valid poll
+- THEN cached readings do not make the write eligible
+
+#### Scenario: The stove omits the boiler target in its first reply
+- GIVEN the reported target is 63 °C and the user requests 70 °C
+- WHEN the scheduled verification poll does not include the target
+- THEN the slider reverts to the last reported value without a failure notification

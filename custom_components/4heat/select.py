@@ -32,6 +32,8 @@ class FourHeatCombustionPower(CoordinatorEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
+        if (assumed := self.coordinator.assumed_control_value(POWER_TYPE)) is not None:
+            return combustion_power_option(assumed)
         reading = (self.coordinator.data or {}).get(POWER_TYPE)
         return combustion_power_option(reading[0]) if reading is not None else None
 

@@ -50,6 +50,8 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self):
         """Return true if switch is on."""
+        if (assumed := self.coordinator.assumed_control_value(self.type)) is not None:
+            return bool(assumed)
         reading = (self.coordinator.data or {}).get(self.type)
         if reading is None:
             return False
@@ -61,8 +63,8 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
         """Turn the switch on."""
         if self.type == MODE_TYPE:
             await self.coordinator.async_turn_on()
-        await self.coordinator.async_request_refresh()
-        self.async_write_ha_state()
+        else:
+            await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs):
         """Turn the switch off."""
@@ -70,8 +72,6 @@ class FourHeatSwitch(CoordinatorEntity, SwitchEntity):
             await self.coordinator.async_turn_off()
         elif self.type == ERROR_TYPE:
             await self.coordinator.async_unblock()
-        await self.coordinator.async_request_refresh()
-        self.async_write_ha_state()
 
 
     @property

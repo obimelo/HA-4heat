@@ -3,7 +3,7 @@
 from datetime import timedelta
 from importlib import import_module
 import logging
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntries
@@ -17,6 +17,7 @@ const = import_module("custom_components.4heat.const")
 coordinator_module = import_module("custom_components.4heat.coordinator")
 sensor = import_module("custom_components.4heat.sensor")
 switch = import_module("custom_components.4heat.switch")
+select = import_module("custom_components.4heat.select")
 
 
 @pytest.mark.asyncio
@@ -64,6 +65,50 @@ async def test_sensor_routing_attributes_are_published_in_home_assistant(tmp_pat
         target = sensor.FourHeatDevice(coordinator, const.BOILER_TARGET_ID, "My stove")
         assert target.native_unit_of_measurement == UnitOfTemperature.CELSIUS
         assert target.native_value == 70
+    finally:
+        await platform.async_reset()
+        await coordinator.async_shutdown()
+
+
+@pytest.mark.asyncio
+async def test_combustion_selection_publishes_provisional_and_corrected_states(tmp_path, monkeypatch):
+    hass = HomeAssistant(str(tmp_path))
+    hass.config_entries = ConfigEntries(hass, {})
+    await hass.config_entries.async_initialize()
+    if hasattr(device_registry, "async_setup"):
+        device_registry.async_setup(hass)
+    await device_registry.async_load(hass)
+    await entity_registry.async_load(hass)
+    coordinator = coordinator_module.FourHeatDataUpdateCoordinator(
+        hass, config={CONF_HOST: "simulated.invalid"}, options={}, id="example",
+    )
+    platform = EntityPlatform(
+        hass=hass, logger=logging.getLogger(__name__), domain="select",
+        platform_name=const.DOMAIN, platform=select, scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    exchange = Mock(side_effect=[
+        '["SEC","1","B20364000000000003"]', '["ERR"]', '["SEC","1","B20364000000000002"]',
+    ])
+    timers = Mock(return_value=Mock())
+    notify = Mock()
+    monkeypatch.setattr(coordinator, "_exchange", exchange)
+    monkeypatch.setattr(coordinator_module, "async_call_later", timers)
+    monkeypatch.setattr(coordinator_module.persistent_notification, "async_create", notify)
+    try:
+        await coordinator.async_refresh()
+        power = select.FourHeatCombustionPower(coordinator, "My stove")
+        with patch.object(select.FourHeatCombustionPower, "device_info", None):
+            await platform.async_add_entities([power])
+        assert hass.states.get(power.entity_id).state == "P3"
+        await power.async_select_option("Auto")
+        assert hass.states.get(power.entity_id).state == "Auto"
+        notify.assert_not_called()
+        check = timers.call_args_list[0].args[2]
+        assert timers.call_args_list[0].args[1] == coordinator_module.CONFIRM_DELAY
+        await check(None)
+        assert hass.states.get(power.entity_id).state == "P2"
+        notify.assert_called_once()
     finally:
         await platform.async_reset()
         await coordinator.async_shutdown()

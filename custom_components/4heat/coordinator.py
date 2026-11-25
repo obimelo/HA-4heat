@@ -13,9 +13,12 @@ Notes on the module (tested on a Fogo Montanha Square D pellet insert):
   trusted setpoint / room values are kept until the probe is back.
 """
 import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import timedelta
 import logging
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
@@ -31,7 +34,7 @@ from .boiler import (
 from .const import (
     DOMAIN, SOCKET_TIMEOUT, DATA_QUERY, ERROR_QUERY,
     RESULT_ERROR, CONF_MODE, CONF_BOILER_CONTROLS, DEFAULT_BOILER_CONTROLS,
-    MODES, MODE_TYPE, ERROR_TYPE,
+    MODES, MODE_NAMES, MODE_TYPE, ERROR_TYPE,
     SETPOINT_ID, ROOM_TEMP_ID, BOILER_TARGET_ID, POWER_TYPE,
 )
 from .transport import exchange, reply_tokens
@@ -42,8 +45,49 @@ POLL_INTERVAL = timedelta(seconds=120)
 BACKOFF_INTERVAL = timedelta(minutes=5)
 FAILURES_BEFORE_UNAVAILABLE = 3      # keep last data for a couple of missed polls
 CONFIRM_DELAY = 25                   # s, re-read after a command
+# Leave room for Home Assistant's refresh debounce and the socket exchange.
+CONTROL_CONFIRM_TIMEOUT = CONFIRM_DELAY + 2 * SOCKET_TIMEOUT + 5
 SETPOINT_RANGE = (5, 30)             # °C, outside = internal probe fallback
 SETPOINT_JUMP = 5                    # °C, jump without a write = probe lost
+
+_CONTROL_NOTICES = {
+    POWER_TYPE: ("combustion_power", "Combustion Power"),
+    BOILER_TARGET_ID: ("boiler_target", "Boiler Target"),
+    MODE_TYPE: ("stove_power", "Power ON/OFF"),
+    ERROR_TYPE: ("clear_error", "Clear Error"),
+}
+
+
+@dataclass
+class _ControlConfirmation:
+    """A requested change that has not been confirmed by a poll."""
+
+    value: int
+    readback_due: bool = False
+    cancel_callbacks: tuple[Callable[[], None], ...] = ()
+
+
+def _reported_control_value(control_id: str, reading) -> int | None:
+    """Normalize a fresh reading to the value shown by the corresponding control."""
+    value, marker = reading
+    if control_id == POWER_TYPE:
+        option = combustion_power_option(value)
+        return COMBUSTION_POWER_VALUES[option] if marker == "B" and option is not None else None
+    if control_id == BOILER_TARGET_ID:
+        return value if marker == "B" else None
+    if control_id == MODE_TYPE:
+        return int(value not in (0, 7, 8, 9)) if value in MODE_NAMES else None
+    return int(value != 0) if control_id == ERROR_TYPE and value >= 0 else None
+
+
+def _format_control_value(control_id: str, value: int) -> str:
+    if control_id == POWER_TYPE:
+        return combustion_power_option(value) or str(value)
+    if control_id == BOILER_TARGET_ID:
+        return f"{value} °C"
+    if control_id == MODE_TYPE:
+        return "On" if value else "Off"
+    return "Active error" if value else "No active error"
 
 
 class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
@@ -63,6 +107,7 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
         self._mode = False
         self._lock = asyncio.Lock()
         self._confirm_unsub = None
+        self._confirmations: dict[str, _ControlConfirmation] = {}
         self._retired = False
         self.boiler_controls = options.get(CONF_BOILER_CONTROLS, DEFAULT_BOILER_CONTROLS)
         self.swiches = [MODE_TYPE]
@@ -146,6 +191,8 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed("Empty answer from the 4heat module")
             if items[0] == RESULT_ERROR:
                 items = reply_tokens(self._exchange(ERROR_QUERY))
+                if items[0] in ("", RESULT_ERROR):
+                    raise UpdateFailed("No usable reply from the 4heat fallback query")
             readings = {}
             for item in items:
                 if len(item) > 3:
@@ -161,12 +208,18 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed("4heat exchange already in progress")
             return self.last_successful_data
 
+        due = {
+            control_id for control_id, pending in self._confirmations.items()
+            if pending.readback_due
+        }
         try:
             async with self._lock:
                 async with asyncio.timeout(SOCKET_TIMEOUT + 5):
                     fresh_readings = await self.hass.async_add_executor_job(_read_current_reply)
                 self._fresh_readings = fresh_readings
         except Exception as err:  # noqa: BLE001
+            for control_id in due:
+                self._finish_control_confirmation(control_id)
             self._fresh_readings = {}
             self.update_interval = BACKOFF_INTERVAL
             self.failures += 1
@@ -182,6 +235,21 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
         self.failures = 0
         self.last_ok = dt_util.now()
         self.update_interval = POLL_INTERVAL
+        for control_id, pending in list(self._confirmations.items()):
+            reading = fresh_readings.get(control_id)
+            actual = None if reading is None else _reported_control_value(control_id, reading)
+            if actual == pending.value:
+                self._finish_control_confirmation(control_id)
+            elif control_id in due:
+                self._finish_control_confirmation(control_id)
+                if actual is not None:
+                    requested = _format_control_value(control_id, pending.value)
+                    reported = _format_control_value(control_id, actual)
+                    self._notify_control(
+                        control_id,
+                        f"Requested **{requested}**, but the stove reports **{reported}**. "
+                        "The control has been updated to match the stove.",
+                    )
         return data
 
     def _check_room_probe(self, data: dict) -> None:
@@ -227,29 +295,96 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
 
         self._confirm_unsub = async_call_later(self.hass, CONFIRM_DELAY, _later)
 
+    def assumed_control_value(self, control_id: str) -> int | None:
+        """Return a provisional value for a control, never for a sensor."""
+        pending = self._confirmations.get(control_id)
+        return pending.value if pending is not None else None
+
+    def _assume_control_value(self, control_id: str, value: int) -> _ControlConfirmation:
+        """Publish the requested control state separately from the reported snapshot."""
+        self._finish_control_confirmation(control_id)
+        pending = _ControlConfirmation(value)
+        self._confirmations[control_id] = pending
+        self.async_update_listeners()
+        return pending
+
+    def _schedule_control_readback(self, control_id: str, pending: _ControlConfirmation) -> None:
+        async def _check(_now):
+            if self._confirmations.get(control_id) is pending:
+                pending.readback_due = True
+                await self.async_request_refresh()
+
+        async def _expire(_now):
+            if self._confirmations.get(control_id) is pending:
+                self._finish_control_confirmation(control_id)
+                self.async_update_listeners()
+
+        pending.cancel_callbacks = (
+            async_call_later(self.hass, CONFIRM_DELAY, _check),
+            async_call_later(self.hass, CONTROL_CONFIRM_TIMEOUT, _expire),
+        )
+
+    def _notice_id(self, control_id: str) -> str:
+        return f"{DOMAIN}_{self.stove_id}_{_CONTROL_NOTICES[control_id][0]}"
+
+    def _notify_control(self, control_id: str, message: str) -> None:
+        name = self.config_entry.title if self.config_entry else "4Heat"
+        persistent_notification.async_create(
+            self.hass,
+            message,
+            title=f"{name} — {_CONTROL_NOTICES[control_id][1]}",
+            notification_id=self._notice_id(control_id),
+        )
+
+    def _finish_control_confirmation(self, control_id: str) -> None:
+        if (pending := self._confirmations.pop(control_id, None)) is None:
+            return
+        for cancel in pending.cancel_callbacks:
+            cancel()
+
     async def async_shutdown(self) -> None:
         """Cancel this stove's delayed command refresh before retiring it."""
         self._retired = True
         if self._confirm_unsub:
             self._confirm_unsub()
             self._confirm_unsub = None
+        for control_id in list(self._confirmations):
+            self._finish_control_confirmation(control_id)
         await super().async_shutdown()
 
     # ------------------------------------------------------------------ commands
     async def async_turn_on(self) -> bool:
-        ok = await self._send(self._on_cmd, "ON")
-        self._schedule_confirm()
-        return ok
+        async with self._lock:
+            return await self._async_send_control_locked(self._on_cmd, "ON", MODE_TYPE, 1)
 
     async def async_turn_off(self) -> bool:
-        ok = await self._send(self._off_cmd, "OFF")
-        self._schedule_confirm()
-        return ok
+        async with self._lock:
+            return await self._async_send_control_locked(self._off_cmd, "OFF", MODE_TYPE, 0)
 
     async def async_unblock(self) -> bool:
-        ok = await self._send(self._unblock_cmd, "UNBLOCK")
-        self._schedule_confirm()
-        return ok
+        if self._unblock_cmd is None:
+            raise ServiceValidationError("Clearing errors is not supported in legacy command mode.")
+        async with self._lock:
+            return await self._async_send_control_locked(self._unblock_cmd, "UNBLOCK", ERROR_TYPE, 0)
+
+    async def _async_send_control_locked(
+        self, payload: bytes, label: str, control_id: str, value: int,
+    ) -> bool:
+        if self._retired:
+            raise HomeAssistantError("The 4Heat connection is no longer active.")
+        pending = self._confirmations.get(control_id)
+        if (
+            control_id in (BOILER_TARGET_ID, POWER_TYPE)
+            and pending is not None
+            and pending.value == value
+        ):
+            return True
+        pending = self._assume_control_value(control_id, value)
+        try:
+            return await self._send_locked(payload, label, check_reply=True)
+        finally:
+            if not self._retired:
+                self._schedule_control_readback(control_id, pending)
 
     async def async_set_value(self, id, value) -> bool:
         payload = f'["SEC","1","B{id}{str(int(value)).zfill(12)}"]'.encode()
@@ -322,13 +457,9 @@ class FourHeatDataUpdateCoordinator(DataUpdateCoordinator):
                 wire_value = COMBUSTION_POWER_VALUES[option]
 
             setting = f"B{reading_id}{wire_value:012d}"
-            ok = await self._send_locked(
-                f'["SEC","1","{setting}"]'.encode(), setting, check_reply=True,
+            await self._async_send_control_locked(
+                f'["SEC","1","{setting}"]'.encode(), setting, reading_id, wire_value,
             )
-            self._schedule_confirm()
-
-        if not ok:
-            raise HomeAssistantError("The stove did not accept or reply to the setting change.")
 
     async def async_set_j(self, id, value) -> bool:
         """Write a value reported with the 'J' marker (e.g. room setpoint J30138)."""

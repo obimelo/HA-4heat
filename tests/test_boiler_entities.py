@@ -170,7 +170,8 @@ async def test_controls_use_reported_values_and_user_facing_names(tmp_path, monk
         assert (target.native_min_value, target.native_max_value) == (60, 80)
         assert not power.available
         await target.async_set_native_value(70)
-        assert target.native_value is None
+        assert target.native_value == 70
+        assert const.BOILER_TARGET_ID not in instance.data
 
         await instance.async_refresh()
         assert target.native_value == 70 and target.native_max_value == 75
@@ -178,7 +179,8 @@ async def test_controls_use_reported_values_and_user_facing_names(tmp_path, monk
         with pytest.raises(ServiceValidationError, match="Choose combustion power"):
             await power.async_select_option("P6")
         await power.async_select_option("Auto")
-        assert power.current_option == "P2"
+        assert power.current_option == "Auto"
+        assert instance.data[const.POWER_TYPE] == [2, "B"]
 
         await instance.async_refresh()
         assert power.current_option == "Auto"

@@ -11,6 +11,7 @@ The stove device page mixes useful boiler controls with readings that are unsupp
 - Show the Combustion Power selector and Boiler Target slider on the stove device by default, unless the controls have been explicitly disabled.
 - Label the read-only fault sensor Error Message to distinguish it from the Clear Error switch.
 - Hide the corresponding read-only sensors from the device page while the controls are enabled, without removing them from automations.
+- Update native controls immediately, verify against the stove, and notify only for a confirmed mismatch.
 
 ## Capabilities
 
@@ -21,6 +22,7 @@ The stove device page mixes useful boiler controls with readings that are unsupp
 - `room-thermostat`: Remove the Home Assistant climate entity.
 - `stove-switches`: Distinguish the Power ON/OFF switch from the State sensor.
 - `boiler-controls`: Present the requested slider and power options on the stove device.
+- `module-communication`: Re-read the stove before notifying about a failed native control change.
 
 ## Impact
 

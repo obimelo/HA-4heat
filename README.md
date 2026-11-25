@@ -49,9 +49,14 @@ it again.
 
 The **Combustion Power** dropdown offers **Auto, P5, P4, P3, P2, P1** in that order. It changes the
 configured setting, not the stove's on/off state or its measured power.
-Both controls display what the stove reports instead of immediately showing
-the requested value. The integration normally asks for a readback after
-25 seconds.
+The four controls show the requested value immediately while the stove is being
+checked. A matching fresh reading confirms the change; otherwise HA-4heat
+requests a readback after about 25 seconds. If the fresh readback differs from
+the request, the control returns to the stove's value and **Notifications**
+explains the difference. A missing reading or timeout drops the temporary value
+without claiming the change failed. The integration does not resend commands.
+Use the read-only sensors for automations that need confirmed stove values.
+The **State** sensor distinguishes **Extinguishing** from **Off**.
 
 Turn these controls off if your stove has a sixth manual power level or lacks
 compatible boiler controls. See the [protocol findings](docs/boiler-controls-protocol.md)
@@ -67,9 +72,9 @@ automations that call `select.select_option`, replace `Level 1`–`Level 5` with
 ### Connection to the Wi-Fi module
 
 The module's local server saturates easily, so the integration makes only one TCP
-exchange at a time, polls every 120 s, waits 5 min after a failure and re-reads the
-stove 25 s after a command. Avoid sending read commands for ids the stove does not
-report: on some modules this freezes the local server until a power cycle.
+exchange at a time, polls every 120 s, and waits 5 min after a failure. Command
+readbacks use the same polling path. Avoid sending read commands for ids the stove
+does not report: on some modules this freezes the local server until a power cycle.
 
 ### Developer specification
 

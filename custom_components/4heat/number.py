@@ -43,6 +43,8 @@ class FourHeatBoilerTarget(CoordinatorEntity, NumberEntity):
 
     @property
     def native_value(self) -> float | None:
+        if (assumed := self.coordinator.assumed_control_value(BOILER_TARGET_ID)) is not None:
+            return assumed
         reading = (self.coordinator.data or {}).get(BOILER_TARGET_ID)
         return reading[0] if reading is not None else None
 
